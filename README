@@ -1,0 +1,13 @@
+Set-up
+======
+
+The *Nova PM sensor* is represented at /dev/ttyUSB0 with owner root and group
+dialout. To avoid having to run this program as root in order to access the
+sensor, add your user to the dialout group. You may need to reboot for changes
+to take effect [1].
+
+```
+sudo usermod -a -G dialout $USER
+```
+
+[1] https://askubuntu.com/a/133244/
