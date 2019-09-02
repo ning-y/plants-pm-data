@@ -25,11 +25,11 @@ class DB:
         cls._append_row(session, cls._TYPE_COMMENT, value)
 
     @classmethod
-    def sync(cls, session):
+    def sync(cls, session, delay=0):
         """Syncs the local database onto Google Sheets."""
         local_data = cls._get_all(session)
         remote_obs_count = Sheet.get_obs_count(session)
-        Sheet.add_rows(session, local_data[remote_obs_count:])
+        Sheet.add_rows(session, local_data[remote_obs_count:], delay=delay)
 
     @classmethod
     def get_all_sessions(cls):
@@ -88,12 +88,13 @@ class Sheet:
     _SPREADSHEET_KEY = os.environ['SPREADSHEET_KEY']
 
     @classmethod
-    def add_rows(cls, session, rows):
+    def add_rows(cls, session, rows, delay=0):
         if len(rows) == 0:
             return
 
         wks = cls.get_worksheet(cls._SPREADSHEET_KEY, session)
         for row in rows:
+            time.sleep(delay)
             wks.append_row(row)
 
     @classmethod

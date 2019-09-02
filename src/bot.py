@@ -134,5 +134,5 @@ class Bot(Updater):
 
     @staticmethod
     def __get_sys_time():
-        datetime = subprocess.check_output(['date']).decode().strip()
-        return ' '.join(datetime.split())
+        uptime = subprocess.check_output(['uptime']).decode().strip().split(',')[0]
+        return uptime
