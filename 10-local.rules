@@ -1,0 +1,4 @@
+SUBSYSTEM=="tty", KERNELS=="1-1.1", SYMLINK+="sensor1"
+SUBSYSTEM=="tty", KERNELS=="1-1.2", SYMLINK+="sensor2"
+SUBSYSTEM=="tty", KERNELS=="1-1.3", SYMLINK+="sensor3"
+SUBSYSTEM=="tty", KERNELS=="1-1.4", SYMLINK+="sensor4"

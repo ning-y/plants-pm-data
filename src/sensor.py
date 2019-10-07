@@ -5,15 +5,31 @@ class Sensor:
     BYTE_0 = 0xaa  # 'Message header'
     BYTE_1 = 0xc0  # 'Commander No.'
     BYTE_9 = 0xab  # 'Message tail'
+    PORTS = [os.environ['SENSOR_PORT_{}'.format(i)] for i in range(1,5)]
 
     @classmethod
     def get_readings(cls):
+        results = []
+        for port in range(1, 5):
+            try:
+                results.append(cls.get_reading(port))
+            except Exception as e:
+                results.append(str(e))
+        return results
+
+    @classmethod
+    def get_reading(cls, port_number):
         """
         Receives and interprets the UART message. Highly adapted from
         https://gist.github.com/marw/9bdd78b430c8ece8662ec403e04c75fe.
         Nova PM specifications from https://nettigo.pl/attachments/398.
+
+        Parameters
+        ----------
+        port_number : int
+            in [1, 4], inclusive
         """
-        dev = serial.Serial(os.environ['SENSOR_PORT'], cls.BITRATE)
+        dev = serial.Serial(cls.PORTS[port_number-1], cls.BITRATE)
         if not dev.isOpen():
             dev.open()
 
