@@ -1,29 +1,12 @@
 #! /usr/bin/env bash
 
-WAIT=1
-
 ping 8.8.8.8 -c 1
-TRY1=$?
+EXIT=$?
 
-sleep "${WAIT}s"
-
-ping 8.8.8.8 -c 1
-TRY2=$?
-
-sleep "${WAIT}s"
-
-ping 8.8.8.8 -c 1
-TRY3=$?
-
-sleep "${WAIT}s"
-
-ping 8.8.8.8 -c 1
-TRY4=$?
-
-echo $((TRY1 + TRY2 + TRY3 + TRY4))
-
-if [ $((TRY1 + TRY2 + TRY3 + TRY4)) -ne 0 ]; then
+if [ ${EXIT} -ne 0 ]; then
+	echo "nmcli con down nings"
 	nmcli con down nings
 	sleep 5s
+	echo "nmcli con up nings"
 	nmcli con up nings
 fi
