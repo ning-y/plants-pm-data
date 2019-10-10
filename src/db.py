@@ -111,7 +111,6 @@ class Sheet:
         """
         client = gspread.authorize(cls._CREDENTIALS)
         spreadsheet = client.open_by_key(spreadsheet_key)
-        print(spreadsheet.worksheets())
         if not cls.pad(session) in \
                 [ws.title for ws in spreadsheet.worksheets()]:
             return spreadsheet.add_worksheet(

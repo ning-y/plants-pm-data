@@ -23,7 +23,7 @@ TRY4=$?
 echo $((TRY1 + TRY2 + TRY3 + TRY4))
 
 if [ $((TRY1 + TRY2 + TRY3 + TRY4)) -ne 0 ]; then
-	nmcli con down NUS_STU
+	nmcli con down nings
 	sleep 5s
-	nmcli con up NUS_STU
+	nmcli con up nings
 fi
