@@ -200,8 +200,8 @@ class Bot(Updater):
                 DB.sync(job.name)
             except Exception as e:
                 cls.__send_message(bot, job.context['chat_id'],
-                        'An exception was raised in the job callback:\n' +
-                        '<b>{}</b>'.format(str(e)))
+                        'A {} was raised in the job callback:\n' +
+                        '<b>{}</b>'.format(type(e), e))
         return __session_callback
 
     @classmethod
