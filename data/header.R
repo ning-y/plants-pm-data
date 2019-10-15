@@ -4,7 +4,7 @@ suppressPackageStartupMessages(library(tidyverse))
 SYSTIME <- Sys.time()
 DIFFTIME_ZERO <- difftime(SYSTIME, SYSTIME)
 
-get_session <- function(filename) {
+get_session <- function(filename, wait_for='pm2.5') {
     #' Get session from CSV file.
     #'
     #' Returns a two-member list representation of the recording session
@@ -19,20 +19,21 @@ get_session <- function(filename) {
     data <- suppressMessages(read_csv(filename, col_names=F))
     names(data) <- c('time', 'type', 'value')
 
-    ### Trim values before PM2.5 is in range.###
+    ### Trim values before PM2.5/PM10 is in range.###
     data$time <- as.numeric(as.POSIXct(data$time, origin='1970-01-01'))
     # Find the row index with the last PM2.5===999.9 reading. Some data starts
     # with PM2.5 in range, some do not. Account for this using the bool var
     # saturated.
-    saturated <- !max(as.numeric(subset(data, type=='pm2.5')$value)) == 999.9
+    threshold <- ifelse(wait_for=='pm2.5', 999.9, 1999.9)
+    saturated <- !max(as.numeric(subset(data, type==wait_for)$value)) == threshold
     remove_up_to <- 0
     for (i in seq(1, nrow(data))) {
         row <- data[i,]
-        if (row$type != 'pm2.5') next
+        if (row$type != wait_for) next
 
         pm25_reading <- as.numeric(row$value)
-        if (pm25_reading == 999.9) saturated <- T
-        if (pm25_reading != 999.9 & saturated) {
+        if (pm25_reading == threshold) saturated <- T
+        if (pm25_reading != threshold & saturated) {
             remove_up_to <- i
             break
         }
