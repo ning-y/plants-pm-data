@@ -1,6 +1,7 @@
 import logging, os, subprocess, time
 from telegram import ParseMode
 from telegram.ext import CommandHandler, Job, Updater
+from telegram.ext.dispatcher import run_async
 from db import DB
 from sensor import Sensor
 
@@ -48,6 +49,8 @@ class Bot(Updater):
                 'list_sessions', self.__handle_list_sessions))
         self.dispatcher.add_handler(CommandHandler(
                 'resync', self.__handle_resync, pass_args=True))
+        self.dispatcher.add_handler(CommandHandler(
+                'new_session_for_all', self.__handle_new_session_for_all, pass_args=True))
         logger.info('Bot initialised.')
 
     def __handle_status(self, bot, update):
@@ -202,6 +205,19 @@ class Bot(Updater):
                 'Done with resync.',
                 reply_to_message_id=start_message.message_id)
 
+    def __handle_new_session_for_all(self, bot, update, args):
+        r'''
+        Made specifically for sensor calibration. To calibrate sensors, we want
+        the readings to be as close together in time as possible. If we relied
+        on /new_session for that, we could hope to do that due to network
+        latency and human reaction time. So, we made this function to start all
+        four sessions in one command.
+        '''
+        basename = args[0] if '{}' in args[0] else args[0] + '{}'
+        args_ls = [(i, basename.format(i), '60') for i in range(1, 5)]
+        for args in args_ls:
+            self.__handle_new_session(bot, update, args)
+
     @classmethod
     def __handle_check_readings(cls, bot, update):
         readings = Sensor.get_readings()
@@ -211,6 +227,7 @@ class Bot(Updater):
 
     @classmethod
     def __get_session_callback(cls, sensor):
+        @run_async
         def __session_callback(bot, job):
             try:
                 readings = Sensor.get_reading(sensor)
