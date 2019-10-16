@@ -1,4 +1,4 @@
-import logging, os, subprocess
+import logging, os, subprocess, time
 from telegram import ParseMode
 from telegram.ext import CommandHandler, Job, Updater
 from db import DB
@@ -14,6 +14,8 @@ class Bot(Updater):
     END_SESSION_USAGE = '<code>/end_session &lt;name&gt;</code>'
     COMMENT_USAGE = '<code>/comment &lt;comment&gt;</code>'
     MONITOR_READINGS_USAGE = '<code>/monitor &lt;seconds&gt;</code>'
+    LIST_SESSIONS_USAGE = '<code>/list_sessions</code>'
+    RESYNC_USAGE = '<code>/resync &lt;name&gt;</code>'
 
     def __init__(self, *, token):
         super().__init__(token=token)
@@ -43,20 +45,10 @@ class Bot(Updater):
         self.dispatcher.add_handler(CommandHandler(
                 'end_monitor', self.__handle_end_monitor))
         self.dispatcher.add_handler(CommandHandler(
-                'resync', self.__handle_resync))
+                'list_sessions', self.__handle_list_sessions))
+        self.dispatcher.add_handler(CommandHandler(
+                'resync', self.__handle_resync, pass_args=True))
         logger.info('Bot initialised.')
-
-    @classmethod
-    def __handle_resync(cls, bot, update):
-        start_message = cls.__send_message(bot, update.message.chat_id, 'Starting resync.')
-        for session_name in DB.get_all_sessions():
-            logger.info("Trying to sync {}".format(session_name))
-            DB.sync(session_name, delay=1)
-        logger.info("Done syncing.")
-        return bot.send_message(
-                update.message.chat_id,
-                'Done with resync.',
-                reply_to_message_id=start_message.message_id)
 
     def __handle_status(self, bot, update):
         sensor_lines = []
@@ -172,6 +164,11 @@ class Bot(Updater):
         readings = Sensor.get_readings()
         message = '\n'.join([
                 '<b>{}: {}</b>'.format(i+1, s) for i, s in enumerate(readings)])
+
+        valid_readings = filter(lambda x: type(x)  == dict, readings)
+        valid_readings = map(str, valid_readings)
+        logger.info('MONITOR: {}'.format('; '.join(valid_readings)))
+
         return self.__send_message(bot, job.context['chat_id'], message)
 
     def __handle_end_monitor(self, bot, update):
@@ -182,6 +179,28 @@ class Bot(Updater):
         self.__monitor_job = None
         return self.__send_message(bot, update.message.chat_id, 'Stopped monitoring.')
 
+    def __handle_list_sessions(self, bot, update):
+        session_names = DB.get_all_sessions()
+        session_names = map('- {}'.format, session_names)
+        return self.__send_message(bot, update.message.chat_id, '\n'.join(session_names))
+
+    def __handle_resync(self, bot, update, args):
+        # Validate args
+        try:
+            assert len(args) == 1
+        except AssertionError as e:
+            logger.warn(e, exc_info=True)
+            return self.__send_message(bot, update.message.chat_id, self.RESYNC_USAGE)
+        start_message = self.__send_message(bot, update.message.chat_id, 'Starting resync.')
+
+        session_name = args[0]
+        logger.info("Trying to sync {}".format(session_name))
+        DB.sync(session_name, delay=1)
+        logger.info("Done syncing.")
+        return bot.send_message(
+                update.message.chat_id,
+                'Done with resync.',
+                reply_to_message_id=start_message.message_id)
 
     @classmethod
     def __handle_check_readings(cls, bot, update):
