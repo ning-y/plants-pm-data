@@ -1,7 +1,6 @@
 #! /usr/bin/env Rscript
 
-library(tidyverse)
-library(ggfortify)
+suppressMessages(library(tidyverse))
 
 SYSTIME <- Sys.time()
 DIFFTIME_ZERO <- difftime(SYSTIME, SYSTIME)
@@ -12,8 +11,8 @@ get_paired_readings <- function(s1, fn1, s2, fn2, filter_by='pm2.5', tolerance=5
     #' Tolerance is the threshold in seconds between readings of s1/s2 in which
     #' they count as measurement pairs at the same point in time.
 
-    data1 <- read_csv(fn1, col_names=F)
-    data2 <- read_csv(fn2, col_names=F)
+    data1 <- suppressMessages(read_csv(fn1, col_names=F))
+    data2 <- suppressMessages(read_csv(fn2, col_names=F))
     names(data1) <- c('time', 'type', 'value')
     names(data2) <- c('time', 'type', 'value')
     data1 <- subset(data1, type == filter_by)
@@ -108,3 +107,21 @@ plot(s2vs3.lm)
 title('s2 v s3 diagnostics for polynomial fit')
 layout(1)
 dev.off()
+
+### Calibration functions ###
+
+s1_to_s3 <- function(x) {
+    coeff <- s1vs3.lm$coefficients - c(x, 0, 0)
+    roots <- Re(polyroot(coeff))  # Im from rounding errors
+    pos_root <- roots[roots>=0]
+    return(pos_root)
+}
+
+s2_to_s3 <- function(x) {
+    coeff <- s1vs3.lm$coefficients - c(x, 0, 0)
+    roots <- Re(polyroot(coeff))  # Im from rounding errors
+    pos_root <- roots[roots>=0]
+    return(pos_root)
+}
+
+save(s1_to_s3, s2_to_s3, file='calibrations.RData')
