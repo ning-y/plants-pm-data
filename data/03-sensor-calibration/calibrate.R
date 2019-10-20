@@ -110,18 +110,12 @@ dev.off()
 
 ### Calibration functions ###
 
-s1_to_s3 <- function(x) {
-    coeff <- s1vs3.lm$coefficients - c(x, 0, 0)
-    roots <- Re(polyroot(coeff))  # Im from rounding errors
-    pos_root <- roots[roots>=0]
-    return(pos_root)
+to_s3 <- function(lm, x) {
+    coeff <- lm$coefficients - c(x, 0, 0)
+    roots <- Re(polyroot(coeff))
+    root <- roots[roots>=0]
+    if (length(root) == 1) return(root)
+    return(NA)  # would use NULL, but can't have NA in the middle of a vector
 }
 
-s2_to_s3 <- function(x) {
-    coeff <- s1vs3.lm$coefficients - c(x, 0, 0)
-    roots <- Re(polyroot(coeff))  # Im from rounding errors
-    pos_root <- roots[roots>=0]
-    return(pos_root)
-}
-
-save(s1_to_s3, s2_to_s3, file='calibrations.RData')
+save(s1vs3.lm, s2vs3.lm, to_s3, file='calibrations.RData')
