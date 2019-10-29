@@ -119,3 +119,20 @@ to_s3 <- function(lm, x) {
 }
 
 save(s1vs3.lm, s2vs3.lm, to_s3, file='calibrations.RData')
+
+### Calibration function which supposedly contains the lm objects ###
+
+to_s3_easy <- function(sensor, x) {
+    if(sensor == 's1') {
+        lm_obj <- s1vs3.lm
+    } else {
+        lm_obj <- s2vs3.lm
+    }
+    coeff <- lm_obj$coefficients - c(x, 0, 0)
+    roots <- Re(polyroot(coeff))
+    root <- roots[roots>=0]
+    if (length(root) == 1) return(root)
+    return(NA)  # would use NULL, but can't have NA in the middle of a vector
+}
+
+save(s1vs3.lm, s2vs3.lm, to_s3_easy, file='calibrations_easy.RData')
