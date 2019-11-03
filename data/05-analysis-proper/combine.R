@@ -99,7 +99,23 @@ data <- rbind(
     get_row(load_data("27octa-soil-2b.csv", 'soil', 'b', 's2')),
     get_row(load_data("28octa-deadplant-1a.csv", 'deadplant', 'a', 's1')),
     get_row(load_data("28octa-plant-3d.csv", 'plant', 'd', 's3')),
-    get_row(load_data("28octa-soil-2b.csv", 'soil', 'b', 's2'))
+    get_row(load_data("28octa-soil-2b.csv", 'soil', 'b', 's2')),
+    # Third set of parallel trials.
+    get_row(load_data("2nova-plant-1a.csv", 'plant', 'a', 's1')),
+    get_row(load_data("2nova-deadplant-2b.csv", 'deadplant', 'b', 's2')),
+    get_row(load_data("2nova-soil-3d.csv", 'soil', 'd', 's3')),
+    get_row(load_data("2novb-plant-1a.csv", 'plant', 'a', 's1')),
+    get_row(load_data("2novb-deadplant-2b.csv", 'deadplant', 'b', 's2')),
+    get_row(load_data("2novb-soil-3d.csv", 'soil', 'd', 's3')),
+    get_row(load_data("30octa-plant-1a.csv", 'plant', 'a', 's1')),
+    get_row(load_data("30octa-deadplant-2b.csv", 'deadplant', 'b', 's2')),
+    get_row(load_data("30octa-soil-3d.csv", 'soil', 'd', 's3')),
+    get_row(load_data("30octb-plant-1a.csv", 'plant', 'a', 's1')),
+    get_row(load_data("30octb-deadplant-2b.csv", 'deadplant', 'b', 's2')),
+    get_row(load_data("30octb-soil-3d.csv", 'soil', 'd', 's3')),
+    get_row(load_data("31octb-plant-1a.csv", 'plant', 'a', 's1')),
+    get_row(load_data("31octb-deadplant-2b.csv", 'deadplant', 'b', 's2')),
+    get_row(load_data("31octb-soil-3d.csv", 'soil', 'd', 's3'))
 )
 
 save(data, file='combined.RData')

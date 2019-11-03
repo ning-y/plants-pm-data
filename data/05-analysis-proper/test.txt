@@ -1,0 +1,23 @@
+
+Call:
+lm(formula = decrease ~ has_soil + has_sa + has_life + box, data = data)
+
+Residuals:
+   Min     1Q Median     3Q    Max 
+-78.90 -24.73  10.11  22.01  50.72 
+
+Coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept)  605.440     12.635  47.916  < 2e-16 ***
+has_soil      98.090     15.475   6.339 1.75e-07 ***
+has_sa        22.743     17.869   1.273    0.211    
+has_life       1.574     17.869   0.088    0.930    
+boxb         127.035     14.590   8.707 1.11e-10 ***
+boxd        -138.652     14.590  -9.503 1.06e-11 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 36.48 on 39 degrees of freedom
+Multiple R-squared:  0.9273,	Adjusted R-squared:  0.918 
+F-statistic: 99.48 on 5 and 39 DF,  p-value: < 2.2e-16
+
