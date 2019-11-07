@@ -83,5 +83,5 @@ trial$time <- trial$time - time_of_first_desaturation(trial, 999.9)
 trial <- subset(trial, time >= -660 & time <= 10000)
 ggplot(trial) +
     geom_line(mapping=aes(x=time, y=value, colour=Sensor)) +
-    ylab(expression("PM"[2.5]*" ("*mu*"g/m"^-3*")")) + xlab('Time (s)')
+    ylab(expression("PM"[2.5]*" ("*mu*"g m"^-3*")")) + xlab('Time (s)')
 ggsave('sensor-calibration-3.png', width=16, height=7)

@@ -1,6 +1,7 @@
 #! /usr/bin/env Rscript
 
 suppressMessages(library(tidyverse))
+library(ggpubr)
 
 SYSTIME <- Sys.time()
 DIFFTIME_ZERO <- difftime(SYSTIME, SYSTIME)
@@ -73,8 +74,11 @@ ggplot(s1vs3, aes(x=s3, y=s1)) +
     geom_point() +
     geom_smooth(method='lm', formula=y~x+I(x^2), colour='blue') +
     geom_abline() +
-    labs(title='s1 v s3 polynomial fit')
-ggsave('s1vs3.png', width=16, height=9)
+    xlab(expression("Sensor 3 Readings ("*mu*"g m"^-3*")")) +
+    ylab(expression("Sensor 1 Readings ("*mu*"g m"^-3*")")) +
+    stat_regline_equation(label.x = 25, label.y = 980, formula=y~x+I(x^2)) +
+    stat_cor(method = "pearson", label.x = 25, label.y = 940)
+ggsave('s1vs3.png', width=4, height=7)
 
 s1vs3.lm <- lm(s1~s3+I(s3^2), data=s1vs3)
 sink('s1vs3.txt')
@@ -86,8 +90,11 @@ ggplot(s2vs3, aes(x=s3, y=s2)) +
     geom_point() +
     geom_smooth(method='lm', formula=y~x+I(x^2), colour='blue') +
     geom_abline() +
-    labs(title='s2 v s3 polynomial fit')
-ggsave('s2vs3.png', width=16, height=9)
+    xlab(expression("Sensor 3 Readings ("*mu*"g m"^-3*")")) +
+    ylab(expression("Sensor 2 Readings ("*mu*"g m"^-3*")")) +
+    stat_regline_equation(label.x = 25, label.y = 980, formula=y~x+I(x^2)) +
+    stat_cor(method = "pearson", label.x = 25, label.y = 940)
+ggsave('s2vs3.png', width=4, height=7)
 
 s2vs3.lm <- lm(s2~s3+I(s3^2), data=s2vs3)
 sink('s2vs3.txt')
