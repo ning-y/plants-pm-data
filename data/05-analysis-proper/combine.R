@@ -115,7 +115,23 @@ data <- rbind(
     get_row(load_data("30octb-soil-3d.csv", 'soil', 'd', 's3')),
     get_row(load_data("31octb-plant-1a.csv", 'plant', 'a', 's1')),
     get_row(load_data("31octb-deadplant-2b.csv", 'deadplant', 'b', 's2')),
-    get_row(load_data("31octb-soil-3d.csv", 'soil', 'd', 's3'))
+    get_row(load_data("31octb-soil-3d.csv", 'soil', 'd', 's3')),
+    # Fourth set of parallel trials, minus last three. TODO:
+    get_row(load_data("3nova-soil-1a.csv", 'soil', 'a', 's1')),
+    get_row(load_data("3nova-plant-2b.csv", 'plant', 'b', 's2')),
+    get_row(load_data("3nova-deadplant-3d.csv", 'deadplant', 'd', 's3')),
+    get_row(load_data("4nova-soil-1a.csv", 'soil', 'a', 's1')),
+    get_row(load_data("4nova-plant-2b.csv", 'plant', 'b', 's2')),
+    get_row(load_data("4nova-deadplant-3d.csv", 'deadplant', 'd', 's3')),
+    get_row(load_data("5nova-soil-1a.csv", 'soil', 'a', 's1')),
+    get_row(load_data("5nova-plant-2b.csv", 'plant', 'b', 's2')),
+    get_row(load_data("5nova-deadplant-3d.csv", 'deadplant', 'd', 's3')),
+    get_row(load_data("6nova-soil-1a.csv", 'soil', 'a', 's1')),
+    get_row(load_data("6nova-plant-2b.csv", 'plant', 'b', 's2')),
+    get_row(load_data("6nova-deadplant-3d.csv", 'deadplant', 'd', 's3')),
+    get_row(load_data("7nova-soil-1a.csv", 'soil', 'a', 's1')),
+    get_row(load_data("7nova-deadplant-2b.csv", 'plant', 'b', 's2')), # typo in filename
+    get_row(load_data("7nova-deadplant-3d.csv", 'deadplant', 'd', 's3'))
 )
 
 save(data, file='combined.RData')
