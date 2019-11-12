@@ -57,3 +57,10 @@ ggplot(sessions) +
     geom_line(mapping=aes(x=time, y=value, colour=box, linetype=value_type)) +
     labs(title='19octa-nothing trials (PM2.5, post calibration-adjustment, set t=0 for first consensus in adjusted readings)')
 ggsave('plot.png', width=16, height=9)
+
+ggplot(subset(sessions, value_type == 'adjusted')) +
+    geom_line(mapping=aes(x=time, y=value, colour=box)) +
+    xlab('Time (s)') +
+    ylab(expression("PM Reading ("*mu*"g m"^-3*")")) +
+    guides(colour=guide_legend(title='Box'))
+ggsave('plot-only-adjusted.png', width=16, height=9)
