@@ -1,0 +1,425 @@
+---
+title: "Complete Analysis"
+output: html_notebook
+---
+
+```{r message=F}
+library(tidyverse)
+library(ggpubr)
+```
+
+Data Import
+===========
+
+We have 60 sets of data in total. Each set represents a single trial of PM2.5,
+PM10 readings for one group from the control and treatment groups. Each trial
+was conducted using one of three sensor-box combinations (1a, 2b, or 3d).
+
+Here, we define a function which will
+
+1. Import a trial,
+2. Add a column to documents its sensor-box and another for its group,
+3. Divide the PM2.5 and PM10 readings, then for each of the two reading types:
+4. Trim away all the readings before the first time the sensor desaturates, and
+5. Set the time column as being the seconds since the first desaturated reading.
+
+By desaturation, we mean the first reading which falls within the sensor's
+specified range. For our model of PM sensor, this is defined as [0, 999.9]
+micrograms per cubic metre.
+
+```{r}
+import <- function(filename) {
+  data <- read_csv(filename, col_names=c('time', 'type', 'value'))
+  data <- list(
+    pm2.5=(data %>%
+      subset(type=='pm2.5') %>%
+      mutate(value=as.numeric(value)) %>%
+      mutate(time=as.numeric(as.POSIXct(time)))),
+    pm10=(data %>%
+      subset(type=='pm10') %>%
+      mutate(value=as.numeric(value)) %>%
+      mutate(time=as.numeric(as.POSIXct(time))))
+  )
+
+  if (grepl('nothing', filename, fixed=T)) {
+    data$group <- 'nothing'
+  }
+  else if (
+    grepl('plant', filename, fixed=T) &
+    !grepl('deadplant', filename, fixed=T) 
+  ) {
+    data$group <- 'plant'
+  }
+  else if (grepl('deadplant', filename, fixed=T)) {
+    data$group <- 'deadplant'
+  } else if (grepl('soil', filename, fixed=T)) {
+    data$group <- 'soil'
+  } else {
+    stop(paste('import: Invaid group in', filename))
+  }
+
+  if(grepl('1[aA]', filename)) {
+    data$sensorbox <- '1a'
+  } else if (grepl('2[bB]', filename)) {
+    data$sensorbox <- '2b'
+  } else if (grepl('3[dD]', filename)) {
+    data$sensorbox <- '3d'
+  } else {
+    stop(paste('import: Invalid sensor-box in', filename))
+  }
+  
+  pm2.5_last_saturated <- last(which(data$pm2.5$value>=999.9))
+  data$pm2.5 <- data$pm2.5[-(1:pm2.5_last_saturated),]
+  pm10_last_saturated <- last(which(data$pm10$value>=999.9))
+  data$pm10 <- data$pm10[-(1:pm10_last_saturated),]
+  
+  data$pm2.5$time <- data$pm2.5$time - data$pm2.5$time[1]
+  data$pm10$time <- data$pm10$time - data$pm10$time[1]
+  
+  return(data)
+}
+```
+
+Then, we import all our data by first building a vector of their filenames.
+
+```{r}
+filenames <- c(
+  '19-octa-nothing-1a.csv',  '19-octa-nothing-2b.csv', '19-octa-nothing-3d.csv', 
+  '20octa-nothing1a.csv',    '20octa-nothing2b.csv',   '20octa-nothing3d.csv', 
+  '21octa-nothing-1a.csv',   '21octa-nothing-2b.csv',  '21octa-nothing-3d.csv', 
+  '21octb-nothing-1a.csv',   '21octb-nothing-2b.csv',  '21octb-nothing-3d.csv', 
+  '22octa-nothing-1a.csv',   '22octa-nothing-2b.csv',  '22octa-nothing-3d.csv', 
+  '25octa-deadplant-1a.csv', '25octa-plant-3D.csv',    '25octa-soil-2b.csv', 
+  '25octb-deadplant-1a.csv', '25octb-plant-3D.csv',    '25octb-soil-2b.csv', 
+  '26octa-deadplant-1a.csv', '26octa-plant-3d.csv',    '26octa-soil-2b.csv', 
+  '27octa-deadplant-1a.csv', '27octa-plant-3d.csv',    '27octa-soil-2b.csv', 
+  '28octa-deadplant-1a.csv', '28octa-plant-3d.csv',    '28octa-soil-2b.csv', 
+  '2nova-deadplant-2b.csv',  '2nova-plant-1a.csv',     '2nova-soil-3d.csv', 
+  '2novb-deadplant-2b.csv',  '2novb-plant-1a.csv',     '2novb-soil-3d.csv', 
+  '30octa-deadplant-2b.csv', '30octa-plant-1a.csv',    '30octa-soil-3d.csv', 
+  '30octb-deadplant-2b.csv', '30octb-plant-1a.csv',    '30octb-soil-3d.csv', 
+  '31octb-deadplant-2b.csv', '31octb-plant-1a.csv',    '31octb-soil-3d.csv', 
+  '3nova-deadplant-3d.csv',  '3nova-plant-2b.csv',     '3nova-soil-1a.csv', 
+  '4nova-deadplant-3d.csv',  '4nova-plant-2b.csv',     '4nova-soil-1a.csv', 
+  '5nova-deadplant-3d.csv',  '5nova-plant-2b.csv',     '5nova-soil-1a.csv', 
+  '6nova-deadplant-3d.csv',  '6nova-plant-2b.csv',     '6nova-soil-1a.csv', 
+  '7nova-plant-2b.csv',  '7nova-deadplant-3d.csv', '7nova-soil-1a.csv'
+) 
+```
+
+Followed by an `lapply` of the `import` function over the filenames vector to
+obtain a list of lists. Each nested list is a trial.
+
+```{r message=F}
+data <- lapply(filenames, function(fn) {
+  import(paste('05-analysis-proper/', fn, sep=''))})
+```
+
+Sensor Calibration
+==================
+
+But, each sensor labelled 1 to 3 are not calibrated with each other. Given the
+same 'air', they give different readings. In order to calibrate these sensors,
+we use a set of time-synchronised readings between the 3 sensors, where
+
+- Each sensor is placed in the same box and reads during the same session, and
+- Each sensor reads within 5s of each other.
+
+An arbitrary sensor, the one labelled 3, is selected as the baseline for
+calibration.
+
+First, load the readings for the individual sensors. Then, combine them into
+one tibble. Note that each sensor's time stamp is synchronised because they are
+given by the same raspberry pi zero computer.
+
+```{r message=F}
+import_cdata <- function(filename) {
+  data <- filename %>%
+    read_csv(col_names=c('time', 'type', 'value')) %>%
+    subset(type != 'comment') %>%
+    mutate(value=as.numeric(value)) %>%
+    mutate(time=as.numeric(as.POSIXct(time)))
+}
+
+# The three sensors were set-up such that they all began at the same time, +- 1s.
+sensor1 <- import_cdata('03-sensor-calibration/16octc-nothing-1bigbox.csv')
+sensor2 <- import_cdata('03-sensor-calibration/16octc-nothing-2bigbox.csv')
+sensor3 <- import_cdata('03-sensor-calibration/16octc-nothing-3bigbox.csv')
+
+# Some times, the an interval (supposedly per-minute) fails to read, and a row is missing.
+# So, we want to make sure that each row index of sensor 1/2 aligns with sensor 3.
+grouped_pm2.5 <- tibble(s1=double(), s2=double(), s3=double())
+sensor1_pm2.5 <- subset(sensor1, type=='pm2.5')
+sensor2_pm2.5 <- subset(sensor2, type=='pm2.5')
+sensor3_pm2.5 <- subset(sensor3, type=='pm2.5')
+# Also, trim the pre-desaturation data. The 999.9 are outliers with high leverage, and the
+# data leading up to saturation is high variance.
+last_saturated <- max(
+  last(which(sensor1_pm2.5$value >= 999.9)),
+  last(which(sensor2_pm2.5$value >= 999.9)),
+  last(which(sensor3_pm2.5$value >= 999.9))
+)
+sensor1_pm2.5 <- sensor1_pm2.5[-(1:last_saturated),]
+sensor2_pm2.5 <- sensor2_pm2.5[-(1:last_saturated),]
+sensor3_pm2.5 <- sensor3_pm2.5[-(1:last_saturated),]
+for (i in seq(1, nrow(sensor3_pm2.5))) {
+  s3 <- sensor3_pm2.5[i,]
+  s1 <- sensor1_pm2.5 %>% mutate(time=time-s3[1,]$time) %>% subset(abs(time) <= 5)
+  s2 <- sensor2_pm2.5 %>% mutate(time=time-s3[1,]$time) %>% subset(abs(time) <= 5)
+  if (nrow(s1) == 0 & nrow(s2) == 0) {
+    next
+  } else if (nrow(s1) == 0) {
+    grouped_pm2.5 <- bind_rows(grouped_pm2.5, list(s1=NA, s2=s2[1,]$value, s3=s3[1,]$value))
+  } else if (nrow(s2) == 0) {
+    grouped_pm2.5 <- bind_rows(grouped_pm2.5, list(s1=s1[1,]$value, s2=NA, s3=s3[1,]$value))
+  } else {
+    grouped_pm2.5 <- bind_rows(grouped_pm2.5, list(s1=s1[1,]$value, s2=s2[1,]$value, s3=s3[1,]$value))
+  }
+}
+# Repeat for PM10...
+grouped_pm10 <- tibble(s1=double(), s2=double(), s3=double())
+sensor1_pm10 <- subset(sensor1, type=='pm10')
+sensor2_pm10 <- subset(sensor2, type=='pm10')
+sensor3_pm10 <- subset(sensor3, type=='pm10')
+last_saturated <- max(
+  last(which(sensor1_pm10$value >= 999.9)),
+  last(which(sensor2_pm10$value >= 999.9)),
+  last(which(sensor3_pm10$value >= 999.9))
+)
+sensor1_pm10 <- sensor1_pm10[-(1:last_saturated),]
+sensor2_pm10 <- sensor2_pm10[-(1:last_saturated),]
+sensor3_pm10 <- sensor3_pm10[-(1:last_saturated),]
+for (i in seq(1, nrow(sensor3_pm10))) {
+  s3 <- sensor3_pm10[i,]
+  s1 <- sensor1_pm10 %>% mutate(time=time-s3[1,]$time) %>% subset(abs(time) <= 5)
+  s2 <- sensor2_pm10 %>% mutate(time=time-s3[1,]$time) %>% subset(abs(time) <= 5)
+  if (nrow(s1) == 0 & nrow(s2) == 0) {
+    next
+  } else if (nrow(s1) == 0) {
+    grouped_pm10 <- bind_rows(grouped_pm10, list(s1=NA, s2=s2[1,]$value, s3=s3[1,]$value))
+  } else if (nrow(s2) == 0) {
+    grouped_pm10 <- bind_rows(grouped_pm10, list(s1=s1[1,]$value, s2=NA, s3=s3[1,]$value))
+  } else {
+    grouped_pm10 <- bind_rows(grouped_pm10, list(s1=s1[1,]$value, s2=s2[1,]$value, s3=s3[1,]$value))
+  }
+}
+
+data_calibration <- list(pm2.5=grouped_pm2.5, pm10=grouped_pm10)
+```
+
+A quick graphical check to show that the sensors are indeed different:
+
+```{r}
+ggplot(data_calibration$pm2.5) +
+  geom_point(mapping=aes(x=s3, y=s1), size=.2, colour='blue') +
+  geom_point(mapping=aes(x=s2, y=s1), size=.2, colour='red') +
+  geom_abline(linetype='longdash')
+ggplot(data_calibration$pm10) +
+  geom_point(mapping=aes(x=s3, y=s1), size=.2, colour='blue') +
+  geom_point(mapping=aes(x=s2, y=s1), size=.2, colour='red') +
+  geom_abline(linetype='longdash')
+```
+
+Now, the calibration via regression.
+
+```{r}
+calibration <- list(
+  pm2.5=list(
+    s1=lm(s1~s3+I(s3^2), data=data_calibration$pm2.5),
+    s2=lm(s2~s3+I(s3^2), data=data_calibration$pm2.5)
+  ),
+  pm10=list(
+    s1=lm(s1~s3+I(s3^2), data=data_calibration$pm10),
+    s2=lm(s2~s3+I(s3^2), data=data_calibration$pm10)
+  )
+)
+
+summary(calibration$pm2.5$s1)
+summary(calibration$pm2.5$s2)
+summary(calibration$pm10$s1)
+summary(calibration$pm10$s2)
+```
+
+Finally, package it all into a function.
+
+```{r}
+calibrate_one <- function(pm, sensorbox, x) {
+  if (is.na(x)) return(NA)
+  if (pm == 'pm2.5' & sensorbox == '1a') {
+    lm_obj <- calibration$pm2.5$s1
+  } else if (pm == 'pm2.5' & sensorbox == '2b') {
+    lm_obj <- calibration$pm2.5$s2
+  } else if (pm == 'pm10' & sensorbox == '1a') {
+    lm_obj <- calibration$pm10$s1
+  } else if (pm == 'pm10' & sensorbox == '2b') {
+    lm_obj <- calibration$pm10$s2
+  } else {
+    stop(paste('Invalid pm/sensorbox: ', pm, sensorbox))
+  }
+  coeff <- lm_obj$coefficients - c(x, 0, 0)
+  roots <- Re(polyroot(coeff))
+  root <- roots[roots>=0]
+  if (length(root) == 1) return(root)
+  return(NA)  # would use NULL, but can't have NA in the middle of a vector
+}
+
+calibrate <- function(pm, sensorbox, xs) {
+  return(unlist(Map(
+    function(x) calibrate_one(pm, sensorbox, x), xs)))
+}
+```
+
+Some closing graphical sanity checks:
+
+```{r}
+ggplot(data_calibration$pm2.5 %>% mutate(s1.fix=calibrate('pm2.5', '1a', s1))) +
+  geom_point(mapping=aes(x=s3, y=s1), colour='red', size=.2) +
+  geom_point(mapping=aes(x=s3, y=s1.fix), colour='darkgreen', size=.2) +
+  geom_abline()
+ggplot(data_calibration$pm2.5 %>% mutate(s2.fix=calibrate('pm2.5', '2b', s2))) +
+  geom_point(mapping=aes(x=s3, y=s2), colour='red', size=.2) +
+  geom_point(mapping=aes(x=s3, y=s2.fix), colour='darkgreen', size=.2) +
+  geom_abline()
+ggplot(data_calibration$pm10 %>% mutate(s1.fix=calibrate('pm10', '1a', s1))) +
+  geom_point(mapping=aes(x=s3, y=s1), colour='red', size=.2) +
+  geom_point(mapping=aes(x=s3, y=s1.fix), colour='darkgreen', size=.2) +
+  geom_abline()
+ggplot(data_calibration$pm10 %>% mutate(s2.fix=calibrate('pm10', '2b', s2))) +
+  geom_point(mapping=aes(x=s3, y=s2), colour='red', size=.2) +
+  geom_point(mapping=aes(x=s3, y=s2.fix), colour='darkgreen', size=.2) +
+  geom_abline()
+```
+
+PM2.5 Box Plot & Multilinear Regression
+=======================================
+
+First, calibrate the data.
+
+```{r}
+data_calibrated <- data %>%
+  lapply(function(trial) {
+    if (trial$sensorbox == '1a') {
+      trial$pm2.5$value <- calibrate('pm2.5', '1a', trial$pm2.5$value)
+      trial$pm10$value <- calibrate('pm10', '1a', trial$pm10$value)
+    } else if (trial$sensorbox == '2b') {
+      trial$pm2.5$value <- calibrate('pm2.5', '2b', trial$pm2.5$value)
+      trial$pm10$value <- calibrate('pm10', '2b', trial$pm10$value)
+    } else if (trial$sensorbox == '3d') {
+      # noop
+    } else {
+      stop(paste('Invalid sensorbox', trial$sensorbox))
+    }
+    return(trial)
+  })
+```
+
+A quick sanity check:
+
+```{r, echo=F, message=F, results=F}
+lapply(data_calibrated, function(trial) {
+  ggplot(trial$pm2.5) + geom_line(mapping=aes(x=time, y=value)) + xlim(NA, 3*60*60)
+  ggplot(trial$pm10) + geom_line(mapping=aes(x=time, y=value)) + xlim(NA, 3*60*60)
+})
+```
+
+Now, create a new tibble which records the PM decrease 2 hours after the first
+sub-900 micrograms per cubic metre reading.
+
+```{r}
+pm2.5_aggregated <- lapply(data_calibrated, function(trial) {
+  last_super900 <- last(which(trial$pm2.5$value >= 900))
+  valid_readings <- trial$pm2.5[-(1:last_super900),]
+  initial_reading <- valid_readings[1,]$value
+  readings_aft_2hrs <- valid_readings %>%
+    mutate(time=time-(2*60*60)-valid_readings[1,]$time) %>%
+    subset(abs(time) <= 5)
+  last_reading <- readings_aft_2hrs[1,]$value
+  list(sensorbox=trial$sensorbox, group=trial$group, decrease=initial_reading-last_reading)
+})
+
+pm2.5_decrease <- tibble(
+  sensorbox=sapply(pm2.5_aggregated, function(xs) xs$sensorbox),
+  group=sapply(pm2.5_aggregated, function(xs) xs$group),
+  decrease=sapply(pm2.5_aggregated, function(xs) xs$decrease)
+)
+
+pm2.5_decrease$has_soil <- ifelse(pm2.5_decrease$group %in% c('soil', 'deadplant', 'plant'), 1, 0)
+pm2.5_decrease$has_sa <- ifelse(pm2.5_decrease$group %in% c('deadplant', 'plant'), 1, 0)
+pm2.5_decrease$has_life <- ifelse(pm2.5_decrease$group == 'plant', 1, 0)
+```
+
+The multilinear regression:
+
+```{r}
+pm2.5_decrease.lm <- lm(decrease~has_soil + has_sa + has_life + sensorbox, data=pm2.5_decrease)
+summary(pm2.5_decrease.lm)
+```
+
+The boxplot:
+
+```{r}
+groups <- factor(pm2.5_decrease$group, levels=c('nothing', 'soil', 'deadplant', 'plant'))
+pm2.5_decrease$group <- groups
+
+ggboxplot(pm2.5_decrease, x='group', y='decrease', color='sensorbox') +
+    ylab(expression(atop("PM"[2.5]*" decrease ("*mu*"g m"^-3*")", ""))) +
+    xlab("\nControl/Treatment Group") +
+    guides(color=guide_legend(title='Box')) +
+    scale_x_discrete(labels=c(
+        'nothing'='Control',
+        'soil'='Substrate Only',
+        'deadplant'=expression('Pressed '*italic('S. trifasciata')),
+        'plant'=expression('Live '*italic('S. trifasciata')))) +
+    theme_grey()
+```
+
+PM10 Boxplot & Multilinear Regression
+=====================================
+
+```{r}
+pm10_aggregated <- lapply(data_calibrated, function(trial) {
+  last_super900 <- last(which(trial$pm10$value >= 900))
+  valid_readings <- trial$pm10[-(1:last_super900),]
+  initial_reading <- valid_readings[1,]$value
+  readings_aft_2hrs <- valid_readings %>%
+    mutate(time=time-(2*60*60)-valid_readings[1,]$time) %>%
+    subset(abs(time) <= 5)
+  last_reading <- readings_aft_2hrs[1,]$value
+  list(sensorbox=trial$sensorbox, group=trial$group, decrease=initial_reading-last_reading)
+})
+
+pm10_decrease <- tibble(
+  sensorbox=sapply(pm10_aggregated, function(xs) xs$sensorbox),
+  group=sapply(pm10_aggregated, function(xs) xs$group),
+  decrease=sapply(pm10_aggregated, function(xs) xs$decrease)
+)
+
+pm10_decrease$has_soil <- ifelse(pm10_decrease$group %in% c('soil', 'deadplant', 'plant'), 1, 0)
+pm10_decrease$has_sa <- ifelse(pm10_decrease$group %in% c('deadplant', 'plant'), 1, 0)
+pm10_decrease$has_life <- ifelse(pm10_decrease$group == 'plant', 1, 0)
+```
+
+The multilinear regression:
+
+```{r}
+pm10_decrease.lm <- lm(decrease~has_soil + has_sa + has_life + sensorbox, data=pm10_decrease)
+summary(pm10_decrease.lm)
+```
+
+The boxplot:
+
+```{r}
+groups <- factor(pm10_decrease$group, levels=c('nothing', 'soil', 'deadplant', 'plant'))
+pm10_decrease$group <- groups
+
+ggboxplot(pm10_decrease, x='group', y='decrease', color='sensorbox') +
+    ylab(expression(atop("PM"[10]*" decrease ("*mu*"g m"^-3*")", ""))) +
+    xlab("\nControl/Treatment Group") +
+    guides(color=guide_legend(title='Box')) +
+    scale_x_discrete(labels=c(
+        'nothing'='Control',
+        'soil'='Substrate Only',
+        'deadplant'=expression('Pressed '*italic('S. trifasciata')),
+        'plant'=expression('Live '*italic('S. trifasciata')))) +
+    theme_grey()
+```
