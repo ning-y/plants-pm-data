@@ -312,10 +312,8 @@ data_calibrated <- data %>%
     return(trial)
   })
 ```
-
-A quick sanity check:
-
-```{r, echo=F, message=F, results=F}
+```{r, include=F}
+# Quick sanity check. Toggle include=T to show.
 lapply(data_calibrated, function(trial) {
   ggplot(trial$pm2.5) + geom_line(mapping=aes(x=time, y=value)) + xlim(NA, 3*60*60)
   ggplot(trial$pm10) + geom_line(mapping=aes(x=time, y=value)) + xlim(NA, 3*60*60)
@@ -366,11 +364,13 @@ ggboxplot(pm2.5_decrease, x='group', y='decrease', color='sensorbox') +
     xlab("\nControl/Treatment Group") +
     guides(color=guide_legend(title='Box')) +
     scale_x_discrete(labels=c(
-        'nothing'='Control',
+        'nothing'='Nothing',
         'soil'='Substrate Only',
-        'deadplant'=expression('Pressed '*italic('S. trifasciata')),
-        'plant'=expression('Live '*italic('S. trifasciata')))) +
+        'deadplant'=expression('Dried Specimen'),
+        'plant'=expression('Live Specimen'))) +
+    scale_color_discrete(labels=c('Box 1', 'Box 2', 'Box 3')) +
     theme_grey()
+ggsave('boxplot-pm25.eps', width=9, height=5)
 ```
 
 PM10 Boxplot & Multilinear Regression
@@ -417,9 +417,11 @@ ggboxplot(pm10_decrease, x='group', y='decrease', color='sensorbox') +
     xlab("\nControl/Treatment Group") +
     guides(color=guide_legend(title='Box')) +
     scale_x_discrete(labels=c(
-        'nothing'='Control',
+        'nothing'='Nothing',
         'soil'='Substrate Only',
-        'deadplant'=expression('Pressed '*italic('S. trifasciata')),
-        'plant'=expression('Live '*italic('S. trifasciata')))) +
+        'deadplant'=expression('Dried Specimen'),
+        'plant'=expression('Live Specimen'))) +
+        scale_color_discrete(labels=c('Box 1', 'Box 2', 'Box 3')) +
     theme_grey()
+ggsave('boxplot-pm10.eps', width=9, height=5)
 ```
