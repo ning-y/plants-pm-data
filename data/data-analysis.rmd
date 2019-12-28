@@ -403,6 +403,9 @@ Regression
 pm2.5_decrease.lm <- lm(
   time~has_soil + has_sa + has_life + sensorbox, data=pm2.5_decrease)
 summary(pm2.5_decrease.lm)
+
+confint(pm2.5_decrease.lm)
+(confint(pm2.5_decrease.lm)[,2] - confint(pm2.5_decrease.lm)[,1]) / 2
 ```
 
 Boxplot
@@ -455,6 +458,9 @@ pm10_decrease$has_life <- ifelse(
 
 pm10_decrease.lm <- lm(time~has_soil + has_sa + has_life + sensorbox, data=pm10_decrease)
 summary(pm10_decrease.lm)
+
+confint(pm10_decrease.lm)
+(confint(pm10_decrease.lm)[,2] - confint(pm10_decrease.lm)[,1]) / 2
 
 groups <- factor(pm10_decrease$group, levels=c('nothing', 'soil', 'deadplant', 'plant'))
 pm10_decrease$group <- groups
