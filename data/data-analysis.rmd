@@ -473,12 +473,13 @@ library(ggpubr)
 pm10_decrease$pm <- 'PM[10]'
 pm2.5_decrease$pm <- 'PM[2.5]'
 
+# monotone print friendly
 ggboxplot(bind_rows(pm10_decrease, pm2.5_decrease),
-  x='group', y='time', color='sensorbox') +
+  x='group', y='time', fill='sensorbox') +
   facet_grid(. ~ pm, labeller=label_parsed) +
   ylab(expression(atop("Time for PM = 900 "*mu*"g m"^-3*" to half (mins)", ""))) +
   xlab("\nControl/Treatment Group") +
-  guides(color=guide_legend(title='Box')) +
+  guides(fill=guide_legend(title='Box')) +
   scale_x_discrete(labels=c(
       'nothing'=expression(
         atop(NA, textstyle('Nothing'))),
@@ -488,8 +489,10 @@ ggboxplot(bind_rows(pm10_decrease, pm2.5_decrease),
         atop(atop(NA, textstyle('Dried')), atop(textstyle('Specimen'), NA))),
       'plant'=expression(
         atop(atop(NA, textstyle('Live')), atop(textstyle('Specimen'), NA))))) +
-      scale_color_discrete(labels=c('Box 1', 'Box 2', 'Box 3')) +
-  theme_gray() +
+      scale_fill_discrete(
+        palette=function(x) c('#f1a340', '#f7f7f7', '#998ec3'),
+        labels=c('Box 1', 'Box 2', 'Box 3')) +
+  theme_bw() +
   theme(legend.position="top")
 ggsave('boxplot.eps', width=9, height=5)
 ```
