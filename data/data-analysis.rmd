@@ -1,28 +1,42 @@
 ---
-title: "Data Analysis"
+title: "Supporting Information"
+subtitle: "Biological processes in Sansevieria trifasciata reduce its particulate matter removal efficiency"
+author:
+  - Ning Yuan Lee
+  - Samuel Lai
+  - Swee Yang Low
 header-includes:
+  - \usepackage{graphicx}
   - \usepackage{siunitx}
 output:
   pdf_document:
+    fig_caption: yes
     number_sections: true
     toc: true
     toc_depth: 2
   html_notebook: default
 ---
 
+\renewcommand{\thefigure}{S\arabic{figure}}
 \newcommand\pmSMALL{PM\textsubscript{2.5}}
 \newcommand\pmLARGE{PM\textsubscript{10}}
 
-```{r message=F}
-```
+\listoffigures
 
 \pagebreak
-Import and Tidy the Data
-========================
+Import and Tidy Data
+====================
 
 We have 60 sets of data in total.
 Each set represents a single trial of \pmSMALL{}, \pmLARGE{} readings for one group from the four control and treatment groups.
 Each trial was conducted using one of three sensor-box combinations (1a, 2b, or 3d).
+
+\begin{figure}
+  \begin{center}
+  \includegraphics[width=.9\textwidth]{FullSetUp}
+  \end{center}
+  \caption{Photo of the full set-up.}
+\end{figure}
 
 Define an `import` Function
 ---------------------------
@@ -142,13 +156,13 @@ Calibrate Sensors
 =================
 
 We observed that each sensor is not calibrated with the others, and varies sometimes in a non-linear fashion (and so cannot be easily controlled for in the linear model).
-In order to calibrate these sensors, we ran another trial where
+In order to calibrate these sensors, we conducted another trial where
 
 - Each sensor is placed in the same box and reads during the same session, and
 - Each sensor reads within 5s of each other.
 
-An arbitrary sensor, the one labelled 3, is selected as the baseline for calibration.
-We then run a linear regression with quadratic terms, in a pairwise manner between the sensors, in order to obtain estimates for a 'calibration function'.
+An arbitrary sensor labelled 3 was selected as the baseline for calibration.
+We then ran a quadratic regression in a pairwise manner between the sensors, in order to obtain estimates for a calibration function.
 
 Import and Tidy the Calibration Data
 ------------------------------------
@@ -244,15 +258,20 @@ Similar to the previous section, readings before the saturation points were trim
 
 A quick graphical check shows that the sensors are indeed different:
 
-```{r}
+```{r fig.cap="PM2.5 readings of sensor s1 (blue) and s2 (red) for readings of sensor s3 on the x-axis, in the same enclosure, taken at roughly the same time. The solid black line is the $x = y$ line."}
 ggplot(data_calibration$pm2.5) +
   geom_point(mapping=aes(x=s3, y=s1), size=.2, colour='blue') +
-  geom_point(mapping=aes(x=s2, y=s1), size=.2, colour='red') +
-  geom_abline(linetype='longdash')
+  geom_point(mapping=aes(x=s3, y=s2), size=.2, colour='red') +
+  geom_abline(linetype='longdash') +
+  ylab('s1/s2')
+```
+
+```{r fig.cap="PM10 readings of sensor s1 (blue) and s2 (red) for readings of sensor s3 on the x-axis, in the same enclosure, taken at roughly the same time. The solid black line is the $x = y$ line."}
 ggplot(data_calibration$pm10) +
   geom_point(mapping=aes(x=s3, y=s1), size=.2, colour='blue') +
-  geom_point(mapping=aes(x=s2, y=s1), size=.2, colour='red') +
-  geom_abline(linetype='longdash')
+  geom_point(mapping=aes(x=s3, y=s2), size=.2, colour='red') +
+  geom_abline(linetype='longdash') +
+  ylab('s1/s2')
 ```
 
 The missing values are a result of a glitch in obtaining readings from the PM sensors (sometimes, readings fail to be obtained from the sensors).
@@ -314,19 +333,25 @@ calibrate <- function(pm, sensorbox, xs) {
 
 Some closing graphical sanity checks:
 
-```{r}
+```{r fig.cap="PM2.5 readings of s1 versus s3 after calibration (dark green), and before (red). The solid black line is the $x=y$ line."}
 ggplot(data_calibration$pm2.5 %>% mutate(s1.fix=calibrate('pm2.5', '1a', s1))) +
   geom_point(mapping=aes(x=s3, y=s1), colour='red', size=.2) +
   geom_point(mapping=aes(x=s3, y=s1.fix), colour='darkgreen', size=.2) +
   geom_abline()
+```
+```{r fig.cap="PM2.5 readings of s2 versus s3 after calibration (dark green), and before (red). The solid black line is the $x=y$ line."}
 ggplot(data_calibration$pm2.5 %>% mutate(s2.fix=calibrate('pm2.5', '2b', s2))) +
   geom_point(mapping=aes(x=s3, y=s2), colour='red', size=.2) +
   geom_point(mapping=aes(x=s3, y=s2.fix), colour='darkgreen', size=.2) +
   geom_abline()
+```
+```{r fig.cap="PM10 readings of s1 versus s3 after calibration (dark green), and before (red). The solid black line is the $x=y$ line."}
 ggplot(data_calibration$pm10 %>% mutate(s1.fix=calibrate('pm10', '1a', s1))) +
   geom_point(mapping=aes(x=s3, y=s1), colour='red', size=.2) +
   geom_point(mapping=aes(x=s3, y=s1.fix), colour='darkgreen', size=.2) +
   geom_abline()
+```
+```{r fig.cap="PM10 readings of s2 versus s3 after calibration (dark green), and before (red). The solid black line is the $x=y$ line."}
 ggplot(data_calibration$pm10 %>% mutate(s2.fix=calibrate('pm10', '2b', s2))) +
   geom_point(mapping=aes(x=s3, y=s2), colour='red', size=.2) +
   geom_point(mapping=aes(x=s3, y=s2.fix), colour='darkgreen', size=.2) +
@@ -337,10 +362,11 @@ ggplot(data_calibration$pm10 %>% mutate(s2.fix=calibrate('pm10', '2b', s2))) +
 Box Plot & Regression
 =====================
 
-First, we consider \pmSMALL{}.
+First, we consider only \pmSMALL{} in \textsection{}3.1--3.2.
+Then, we repeat the analysis for \pmLARGE{} in \textsection{}3.3.
 
-Transform the Data
-------------------
+Transform Data
+--------------
 
 First, calibrate the data using the previously-defined `calibrate` function.
 
@@ -408,30 +434,6 @@ confint(pm2.5_decrease.lm)
 (confint(pm2.5_decrease.lm)[,2] - confint(pm2.5_decrease.lm)[,1]) / 2
 ```
 
-Boxplot
--------
-
-```{r message=F}
-library(ggpubr)
-
-groups <- factor(pm2.5_decrease$group, levels=c('nothing', 'soil', 'deadplant', 'plant'))
-pm2.5_decrease$group <- groups
-
-ggboxplot(pm2.5_decrease, x='group', y='time', color='sensorbox') +
-    ylab(expression(atop(
-      "Time for PM"[2.5]*" = 900 "*mu*"g m"^-3*" to half (mins)", ""))) +
-    xlab("\nControl/Treatment Group") +
-    guides(color=guide_legend(title='Box')) +
-    scale_x_discrete(labels=c(
-        'nothing'='Nothing',
-        'soil'='Substrate Only',
-        'deadplant'=expression('Dried Specimen'),
-        'plant'=expression('Live Specimen'))) +
-    scale_color_discrete(labels=c('Box 1', 'Box 2', 'Box 3')) +
-    theme_grey()
-ggsave('boxplot-pm25.eps', width=9, height=5)
-```
-
 Repeat for \pmLARGE{}
 ---------------------
 
@@ -461,29 +463,13 @@ summary(pm10_decrease.lm)
 
 confint(pm10_decrease.lm)
 (confint(pm10_decrease.lm)[,2] - confint(pm10_decrease.lm)[,1]) / 2
-
-groups <- factor(pm10_decrease$group, levels=c('nothing', 'soil', 'deadplant', 'plant'))
-pm10_decrease$group <- groups
-
-ggboxplot(pm10_decrease, x='group', y='time', color='sensorbox') +
-    ylab(expression(atop(
-      "Time for PM"[10]*" = 900 "*mu*"g m"^-3*" to half (mins)", ""))) +
-    xlab("\nControl/Treatment Group") +
-    guides(color=guide_legend(title='Box')) +
-    scale_x_discrete(labels=c(
-        'nothing'='Nothing',
-        'soil'='Substrate Only',
-        'deadplant'=expression('Dried Specimen'),
-        'plant'=expression('Live Specimen'))) +
-        scale_color_discrete(labels=c('Box 1', 'Box 2', 'Box 3')) +
-    theme_grey()
-ggsave('boxplot-pm10.eps', width=9, height=5)
 ```
 
-Combine Boxplots for Publication
---------------------------------
+Box Plot
+--------
 
-```{r}
+```{r message=F, fig.show='hide'}
+library(ggpubr)
 pm10_decrease$pm <- 'PM[10]'
 pm2.5_decrease$pm <- 'PM[2.5]'
 
