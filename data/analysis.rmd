@@ -240,7 +240,9 @@ data$pm10 %>%
 data %>%
   do.call(bind_rows, .) %>%
   mutate(
-    type=ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
+    type=factor(
+      ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
+      levels=c("PM[2.5]", "PM[10]")),
     # `~` represent spaces when parsed by ggplot:label_parsed
     condition=recode(
       condition,
@@ -252,7 +254,9 @@ data %>%
   geom_point(
     data=bind_rows(data) %>%
       select(-condition) %>%
-      mutate(type=ifelse(type == "pm2.5", "PM[2.5]", "PM[10]")),
+      mutate(type=factor(
+        ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
+        levels=c("PM[2.5]", "PM[10]"))),
     aes(x=elapsed, y=sc_value),
     size=.2, alpha=.05
   ) +
@@ -262,5 +266,5 @@ data %>%
   ylab(expression("PM Concentration ("*mu*"g m"^-3*")")) +
   xlab(expression("Time (mins)"))
 
-ggsave("concentration-time.eps")
+ggsave("concentration-time.eps", device=cairo_ps, width=9, height=6, units="in")
 ```
