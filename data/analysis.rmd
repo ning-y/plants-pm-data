@@ -1,0 +1,266 @@
+---
+title: "analysis"
+output: html_document
+---
+
+```{r setup, message = FALSE}
+library(MASS)
+library(broom)
+library(tidyverse)
+```
+
+# Data import
+
+```{r}
+csv2tibble <- function(fn, show_plot = FALSE) {
+
+  # Determine the condition of this trial
+  if (grepl("-nothing", fn)) {
+    condition <- "control"
+  } else if (grepl("-plant", fn)) {
+    condition <- "liveplant"
+  } else if (grepl("-deadplant", fn)) {
+    condition <- "deadplant"
+  # } else if (grepl("-soil", fn)) {
+  #   condition <- "soil"
+  } else {
+    stop("Cannot infer condition for file ", fn)
+  }
+
+  # Determine the enclosure/sensor of this trial
+  if (grepl("1a", fn)) {
+    sensor <- "A"
+  } else if (grepl("2b", fn)) {
+    sensor <- "B"
+  } else if (grepl("3d", fn)) {
+    sensor  <- "C"
+  } else {
+    stop("Cannot infer enclosure/sensor for file ", fn)
+  }
+
+  tib <- fn %>%
+    { suppressMessages(
+      read_csv(., col_names = c("datetime", "type", "value"))) } %>%
+    # obs of type "comment" are not used
+    filter(type %in% c("pm2.5", "pm10")) %>%
+    mutate(value=as.numeric(value)) %>%
+    mutate(
+      condition=condition, sensor=sensor, fn=fn,
+      has_area=condition %in% c("deadplant", "liveplant"),
+      has_bio=condition == "liveplant")
+
+  # Experiment starts when PM2.5 first drops below 900.
+  first_pm2.5_999.99 <- tib %>%
+    filter(type == "pm2.5" & value == 999.9) %>%
+    .$datetime %>%
+    last()
+  first_pm2.5_sub900 <- tib %>%
+    filter(datetime > first_pm2.5_999.99) %>%
+    filter(type == "pm2.5" & value <= 900) %>%
+    .$datetime %>%
+    first()
+
+  # Experiment ends when PM2.5/PM10 first drops below 10.
+  first_sub10 <- tib %>%
+    filter(datetime > first_pm2.5_sub900 & value < 10) %>%
+    .$datetime %>%
+    first()
+
+  if (show_plot) {
+    g <- ggplot(tib, aes(x=datetime, y=value, colour=type)) +
+      geom_point() +
+      geom_hline(yintercept = c(900, 999.9)) +
+      geom_vline(xintercept = c(
+        first_pm2.5_999.99, first_pm2.5_sub900, first_sub10))
+    print(g)
+  }
+
+  tib <- filter(tib, between(datetime, first_pm2.5_sub900, first_sub10)) %>%
+    # use minutes instead of seconds, otherwise will get Inf on exp later
+    mutate(elapsed=as.numeric(datetime-first_pm2.5_sub900)/60)
+
+  tib
+}
+
+# Make a list of two tibbles, one for PM2.5, the other for PM10.
+data <- list.files("05-analysis-proper/", "*.csv") %>%
+  Filter(function(x) !grepl("-soil", x), .) %>%
+  paste0("05-analysis-proper/", .) %>%
+  lapply(csv2tibble) %>%
+  do.call(bind_rows, .) %>%
+  mutate(
+    condition=
+      factor(condition, levels=c("control", "deadplant", "liveplant")),
+    type=factor(type, levels=c("pm2.5", "pm10"))) %>%
+  {list(
+    pm2.5 = filter(., type=="pm2.5"),
+    pm10 = filter(., type=="pm10")
+  )}
+```
+
+Note that we omit the soil controls because 5/15 of the trials suffer from systematic error, likely due to a leaky seal on the enclosure.
+
+Sanity check:
+
+```{r fig.retina = 2}
+do.call(bind_rows, data) %>%
+  filter(value > 10) %>%
+  ggplot(aes(x=elapsed, y=value)) +
+  geom_point(size=.1, alpha=.1) +
+  facet_grid(type~condition)
+```
+
+# Model selection
+
+Stepwise BIC optimisation reports a complex model to be most suitable for both
+PM2.5 and PM10.
+
+```{r}
+model_full <- (
+  value ~ elapsed + sensor + has_area + has_bio +
+    elapsed*sensor + elapsed*has_area + elapsed*has_bio)
+glm_bare <- glm(value ~ 1, family=Gamma("log"), data=data$pm2.5)
+glm_full <- glm(model_full, family=Gamma("log"), data=data$pm2.5)
+stepAIC(
+  glm_bare, scope=list(lower=glm_bare, upper=glm_full),
+  direction="both", trace = FALSE,
+  k=log(nrow(data$pm2.5)))
+```
+
+```{r}
+glm_bare <- glm(value ~ 1, family=Gamma("log"), data=data$pm10)
+glm_full <- glm(model_full, family=Gamma("log"), data=data$pm10)
+stepAIC(
+  glm_bare, scope=list(lower=glm_bare, upper=glm_full),
+  direction="both", trace = FALSE,
+  k=log(nrow(data$pm10)))
+```
+
+However, we will opt for a simpler model instead, which has comparable BIC:
+
+```{r}
+model_simpler <- (
+  value ~ elapsed + has_area + has_bio + sensor + elapsed*sensor)
+tibble(
+  pm2.5_simpler = BIC(glm(model_simpler, family=Gamma("log"), data=data$pm2.5)),
+  pm2.5_full = BIC(glm(model_full, family=Gamma("log"), data=data$pm2.5)),
+  pm10_simpler = BIC(glm(model_simpler, family=Gamma("log"), data=data$pm10)),
+  pm10_full = BIC(glm(model_full, family=Gamma("log"), data=data$pm10))
+)
+```
+
+# Regression
+
+## For PM2.5
+
+```{r}
+fits <- list()
+fits$pm2.5 <- data$pm2.5 %>%
+  glm(model_simpler, family=Gamma(link="log"), data=.)
+summary(fits$pm2.5, dispersion=1)
+
+pm2.5_glm.tb <- tidy(fits$pm2.5)
+```
+
+Define sc_value, the sensor-controlled value.
+This is the PM reading controlled for the bias in different sensors.
+
+```{r}
+sensorB_coeff <- pm2.5_glm.tb %>%
+  filter(term == "sensorB") %>%
+  .$estimate
+sensorC_coeff <- pm2.5_glm.tb %>%
+  filter(term == "sensorC") %>%
+  .$estimate
+sensorB_int_coeff <- pm2.5_glm.tb %>%
+  filter(term == "elapsed:sensorB") %>%
+  .$estimate
+sensorC_int_coeff <- pm2.5_glm.tb %>%
+  filter(term == "elapsed:sensorC") %>%
+  .$estimate
+
+data$pm2.5 <- data$pm2.5 %>%
+  mutate(sc_value=recode(
+    sensor,
+    A=value,
+    B=value / exp(sensorB_coeff + sensorB_int_coeff*elapsed),
+    C=value / exp(sensorC_coeff + sensorC_int_coeff*elapsed)
+  ))
+
+data$pm2.5 %>%
+  ggplot(aes(x=elapsed)) +
+  geom_point(aes(y=value), size=.1, alpha=.1) +
+  geom_point(aes(y=sc_value), size=.1, alpha=.1, colour="red") +
+  facet_grid(~sensor)
+```
+
+## For PM10
+
+```{r}
+fits <- list()
+fits$pm10 <- data$pm10 %>%
+  glm(model_simpler, family=Gamma(link="log"), data=.)
+summary(fits$pm10, dispersion=1)
+
+pm10_glm.tb <- tidy(fits$pm10)
+```
+
+```{r}
+sensorB_coeff <- pm10_glm.tb %>%
+  filter(term == "sensorB") %>%
+  .$estimate
+sensorC_coeff <- pm10_glm.tb %>%
+  filter(term == "sensorC") %>%
+  .$estimate
+sensorB_int_coeff <- pm10_glm.tb %>%
+  filter(term == "elapsed:sensorB") %>%
+  .$estimate
+sensorC_int_coeff <- pm10_glm.tb %>%
+  filter(term == "elapsed:sensorC") %>%
+  .$estimate
+
+data$pm10 <- data$pm10 %>%
+  mutate(sc_value=recode(
+    sensor,
+    A=value,
+    B=value / exp(sensorB_coeff + sensorB_int_coeff*elapsed),
+    C=value / exp(sensorC_coeff + sensorC_int_coeff*elapsed)
+  ))
+
+data$pm10 %>%
+  ggplot(aes(x=elapsed)) +
+  geom_point(aes(y=value), size=.1, alpha=.1) +
+  geom_point(aes(y=sc_value), size=.1, alpha=.1, colour="red") +
+  facet_grid(~sensor)
+```
+
+# Visualisation
+
+```{r}
+data %>%
+  do.call(bind_rows, .) %>%
+  mutate(
+    type=ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
+    # `~` represent spaces when parsed by ggplot:label_parsed
+    condition=recode(
+      condition,
+      control = "Control",
+      deadplant = "Dead~plant",
+      liveplant = "Live~plant"
+    )) %>%
+  ggplot(aes(x=elapsed, y=sc_value)) +
+  geom_point(
+    data=bind_rows(data) %>%
+      select(-condition) %>%
+      mutate(type=ifelse(type == "pm2.5", "PM[2.5]", "PM[10]")),
+    aes(x=elapsed, y=sc_value),
+    size=.2, alpha=.05
+  ) +
+  geom_point(aes(fill=condition, colour=condition), size=.2, shape=21) +
+  facet_grid(type ~ condition, labeller=label_parsed) +
+  theme(legend.position = "none") +
+  ylab(expression("PM Concentration ("*mu*"g m"^-3*")")) +
+  xlab(expression("Time (mins)"))
+
+ggsave("concentration-time.eps")
+```
