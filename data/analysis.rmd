@@ -1,12 +1,17 @@
 ---
 title: "analysis"
-output: html_document
+header-includes:
+  - \usepackage{amsmath}
+  - \usepackage{bm}
+output:
+  pdf_document: default
 ---
 
 ```{r setup, message = FALSE}
 library(MASS)
 library(broom)
 library(tidyverse)
+options(pillar.sigfig=4)
 ```
 
 # Data import
@@ -98,7 +103,7 @@ data <- list.files("05-analysis-proper/", "*.csv") %>%
   )}
 ```
 
-Note that we omit the soil controls because 5/15 of the trials suffer from systematic error, likely due to a leaky seal on the enclosure.
+Note that we omit the soil controls because 5 of 15 of those trials suffer from systematic errors, likely due to a leaky seal on the enclosure.
 
 Sanity check:
 
@@ -117,8 +122,7 @@ PM2.5 and PM10.
 
 ```{r}
 model_full <- (
-  value ~ elapsed + sensor + has_area + has_bio +
-    elapsed*sensor + elapsed*has_area + elapsed*has_bio)
+  value ~ elapsed*sensor + elapsed*has_area + elapsed*has_bio)
 glm_bare <- glm(value ~ 1, family=Gamma("log"), data=data$pm2.5)
 glm_full <- glm(model_full, family=Gamma("log"), data=data$pm2.5)
 stepAIC(
@@ -140,7 +144,7 @@ However, we will opt for a simpler model instead, which has comparable BIC:
 
 ```{r}
 model_simpler <- (
-  value ~ elapsed + has_area + has_bio + sensor + elapsed*sensor)
+  value ~ elapsed*sensor + elapsed:has_area + elapsed:has_bio)
 tibble(
   pm2.5_simpler = BIC(glm(model_simpler, family=Gamma("log"), data=data$pm2.5)),
   pm2.5_full = BIC(glm(model_full, family=Gamma("log"), data=data$pm2.5)),
@@ -157,15 +161,122 @@ tibble(
 fits <- list()
 fits$pm2.5 <- data$pm2.5 %>%
   glm(model_simpler, family=Gamma(link="log"), data=.)
-summary(fits$pm2.5, dispersion=1)
-
-pm2.5_glm.tb <- tidy(fits$pm2.5)
+summary(fits$pm2.5)
 ```
 
-Define sc_value, the sensor-controlled value.
-This is the PM reading controlled for the bias in different sensors.
+## For PM10
 
 ```{r}
+fits$pm10 <- data$pm10 %>%
+  glm(model_simpler, family=Gamma(link="log"), data=.)
+summary(fits$pm10)
+```
+
+## Confidence interval for estimates
+
+Since the p-values are all non-informatively small, we report the confidence intervals instead.
+
+```{r}
+coeffs <- lapply(names(fits), function(pm) {
+    tidy(fits[[pm]]) %>% mutate(pm=pm)
+  })
+names(coeffs) <- names(fits)  # was erased
+cis <- lapply(fits, confint)
+
+stopifnot(all(coeffs$pm2.5$term == rownames(cis$pm2.5)))
+stopifnot(all(coeffs$pm10$term == rownames(cis$pm10)))
+stopifnot(all(names(coeffs) == names(cis)))  # in the same order
+
+bind_cols(
+  do.call(bind_rows, coeffs),
+  do.call(bind_rows, lapply(cis, as_tibble))) %>%
+  dplyr::select(pm, term, `2.5 %`, estimate, `97.5 %`)
+```
+
+## Effect on half-life
+
+Let \(\lambda_1\) be the coefficient of time \(t\) under some first condition, and \(\lambda_2\) the same coefficient under a different second condition.
+We can identify the marginal multiplicative effect of the second condition over the first on the half-life as follows:
+\begin{align*}
+  \frac{t_{1/2,\, 2}}{t_{1/2,\, 1}} &=
+      \frac{\ln 2 / \lambda_2}{\ln 2 / \lambda_1} \\
+    &= \frac{\lambda_1}{\lambda_2},
+\end{align*}
+where \(t_{1/2,\, 1}\) is the half-life under the first condition, and \(t_{1/2,\,2}\) under the second.
+
+Note that since the half-life is a ratio of coefficient sets of a conditions, there is no easy way to factorise out the coefficients associated with the control variables.
+So, we report the marginal percentage change in half-life by presence of surface area and then biological activity, once for each sensor.
+
+```{r}
+diff_hl <- function(c2, c1, pm) {
+  stopifnot(pm %in% c("pm2.5", "pm10"))
+  coeff <- coeffs[[pm]]
+  ci <- cis[[pm]]
+  stopifnot(all(c1 %in% rownames(ci)))
+  stopifnot(all(c2 %in% rownames(ci)))
+
+  lambda1s <- c1 %>%
+    sapply(function(c) {
+      lower <- ci[c, 1]
+      est <- filter(coeff, term == c) %>% pull(estimate)
+      upper  <- ci[c, 2]
+      c(lower, est, upper)
+    }) %>%
+    t()
+
+  lambda2s <- c2 %>%
+    sapply(function(c) {
+      lower <- ci[c, 1]
+      est <- filter(coeff, term == c) %>% pull(estimate)
+      upper  <- ci[c, 2]
+      c(lower, est, upper)
+    }) %>%
+    t()
+
+  apply(lambda1s, 2, sum) / apply(lambda2s, 2, sum)
+}
+
+hl_design <- tibble(
+  pm = c(rep("pm2.5", 6), rep("pm10", 6)),
+  effect_of = rep(c(rep("area", 3), rep("bio", 3)), 2),
+  sensor = rep(c("A", "B", "C"), 4)
+)
+hl_effects <- apply(hl_design, 1, function(row) {
+    pm <- row[1];  effect_of <- row[2];  sensor <- row[3]
+    stopifnot(pm %in% c("pm2.5", "pm10"))
+    stopifnot(effect_of %in% c("area", "bio"))
+    stopifnot(sensor %in% c("A", "B", "C"))
+  
+    # Construct c1
+    c1 <- "elapsed"
+    if (sensor == "B") c1 <- c(c1, "elapsed:sensorB")
+    if (sensor == "C") c1 <- c(c1, "elapsed:sensorC")
+    if (effect_of == "bio") c1 <- c(c1, "elapsed:has_areaTRUE")
+  
+    # Construct c2
+    if (effect_of == "area") c2 <- c(c1, "elapsed:has_areaTRUE")
+    if (effect_of == "bio") c2 <- c(c1, "elapsed:has_bioTRUE")
+  
+    diff_hl(c2, c1, pm)
+  }) %>%
+  t() %>%
+  as.data.frame()
+
+bind_cols(hl_design, hl_effects) %>%
+  mutate(lower=V1, estimate=V2, upper=V3) %>%
+  dplyr::select(-V1, -V2, -V3)
+```
+
+# Visualisation
+
+## Pre-computation
+
+For the purpose of visualization, we first 'normalize' readings by factoring out sensor effects.
+The resulting value is named the \texttt{sc_value}, as in sensor-normalized value.
+
+```{r}
+pm2.5_glm.tb <- tidy(fits$pm2.5)
+
 sensorB_coeff <- pm2.5_glm.tb %>%
   filter(term == "sensorB") %>%
   .$estimate
@@ -194,18 +305,11 @@ data$pm2.5 %>%
   facet_grid(~sensor)
 ```
 
-## For PM10
+Repeat for PM10.
 
 ```{r}
-fits <- list()
-fits$pm10 <- data$pm10 %>%
-  glm(model_simpler, family=Gamma(link="log"), data=.)
-summary(fits$pm10, dispersion=1)
-
 pm10_glm.tb <- tidy(fits$pm10)
-```
 
-```{r}
 sensorB_coeff <- pm10_glm.tb %>%
   filter(term == "sensorB") %>%
   .$estimate
@@ -234,7 +338,7 @@ data$pm10 %>%
   facet_grid(~sensor)
 ```
 
-# Visualisation
+## Final graph
 
 ```{r}
 data %>%
@@ -253,7 +357,7 @@ data %>%
   ggplot(aes(x=elapsed, y=sc_value)) +
   geom_point(
     data=bind_rows(data) %>%
-      select(-condition) %>%
+      dplyr::select(-condition) %>%
       mutate(type=factor(
         ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
         levels=c("PM[2.5]", "PM[10]"))),
