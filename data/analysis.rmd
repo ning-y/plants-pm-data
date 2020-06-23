@@ -81,6 +81,8 @@ csv2tibble <- function(fn, show_plot = FALSE) {
   }
 
   tib <- filter(tib, between(datetime, first_pm2.5_sub900, first_sub10)) %>%
+    # PM sensor not specified to measure PM10 > 999.9
+    filter(!(type == "pm10" & value > 999.9)) %>%
     # use minutes instead of seconds, otherwise will get Inf on exp later
     mutate(elapsed=as.numeric(datetime-first_pm2.5_sub900)/60)
 
@@ -182,89 +184,69 @@ coeffs <- lapply(names(fits), function(pm) {
   })
 names(coeffs) <- names(fits)  # was erased
 cis <- lapply(fits, confint)
+cis2 <- lapply(fits, function(x) confint(x, level=.99))
 
 stopifnot(all(coeffs$pm2.5$term == rownames(cis$pm2.5)))
 stopifnot(all(coeffs$pm10$term == rownames(cis$pm10)))
+stopifnot(all(coeffs$pm2.5$term == rownames(cis2$pm2.5)))
+stopifnot(all(coeffs$pm10$term == rownames(cis2$pm10)))
 stopifnot(all(names(coeffs) == names(cis)))  # in the same order
+stopifnot(all(names(coeffs) == names(cis2)))
 
-bind_cols(
+summarised <- bind_cols(
   do.call(bind_rows, coeffs),
-  do.call(bind_rows, lapply(cis, as_tibble))) %>%
-  dplyr::select(pm, term, `2.5 %`, estimate, `97.5 %`)
+  do.call(bind_rows, lapply(cis, as_tibble)),
+  do.call(bind_rows, lapply(cis2, as_tibble))) %>%
+  dplyr::select(
+    pm, term, std.error, `0.5 %`, `2.5 %`, estimate, `97.5 %`, `99.5 %`)
+
+summarised
 ```
 
-## Effect on half-life
-
-Let \(\lambda_1\) be the coefficient of time \(t\) under some first condition, and \(\lambda_2\) the same coefficient under a different second condition.
-We can identify the marginal multiplicative effect of the second condition over the first on the half-life as follows:
-\begin{align*}
-  \frac{t_{1/2,\, 2}}{t_{1/2,\, 1}} &=
-      \frac{\ln 2 / \lambda_2}{\ln 2 / \lambda_1} \\
-    &= \frac{\lambda_1}{\lambda_2},
-\end{align*}
-where \(t_{1/2,\, 1}\) is the half-life under the first condition, and \(t_{1/2,\,2}\) under the second.
-
-Note that since the half-life is a ratio of coefficient sets of a conditions, there is no easy way to factorise out the coefficients associated with the control variables.
-So, we report the marginal percentage change in half-life by presence of surface area and then biological activity, once for each sensor.
+## Half-lives
 
 ```{r}
-diff_hl <- function(c2, c1, pm) {
-  stopifnot(pm %in% c("pm2.5", "pm10"))
-  coeff <- coeffs[[pm]]
-  ci <- cis[[pm]]
-  stopifnot(all(c1 %in% rownames(ci)))
-  stopifnot(all(c2 %in% rownames(ci)))
-
-  lambda1s <- c1 %>%
-    sapply(function(c) {
-      lower <- ci[c, 1]
-      est <- filter(coeff, term == c) %>% pull(estimate)
-      upper  <- ci[c, 2]
-      c(lower, est, upper)
-    }) %>%
-    t()
-
-  lambda2s <- c2 %>%
-    sapply(function(c) {
-      lower <- ci[c, 1]
-      est <- filter(coeff, term == c) %>% pull(estimate)
-      upper  <- ci[c, 2]
-      c(lower, est, upper)
-    }) %>%
-    t()
-
-  apply(lambda1s, 2, sum) / apply(lambda2s, 2, sum)
-}
-
-hl_design <- tibble(
-  pm = c(rep("pm2.5", 6), rep("pm10", 6)),
-  effect_of = rep(c(rep("area", 3), rep("bio", 3)), 2),
-  sensor = rep(c("A", "B", "C"), 4)
+to_find <- tibble(
+  pm = c(rep("pm2.5", 9), rep("pm10", 9)),
+  sensor = rep(c(rep("A", 3), rep("B", 3), rep("C", 3)), 2),
+  condition = rep(c("control", "deadplant", "liveplant"), 6)
 )
-hl_effects <- apply(hl_design, 1, function(row) {
-    pm <- row[1];  effect_of <- row[2];  sensor <- row[3]
-    stopifnot(pm %in% c("pm2.5", "pm10"))
-    stopifnot(effect_of %in% c("area", "bio"))
-    stopifnot(sensor %in% c("A", "B", "C"))
-  
-    # Construct c1
-    c1 <- "elapsed"
-    if (sensor == "B") c1 <- c(c1, "elapsed:sensorB")
-    if (sensor == "C") c1 <- c(c1, "elapsed:sensorC")
-    if (effect_of == "bio") c1 <- c(c1, "elapsed:has_areaTRUE")
-  
-    # Construct c2
-    if (effect_of == "area") c2 <- c(c1, "elapsed:has_areaTRUE")
-    if (effect_of == "bio") c2 <- c(c1, "elapsed:has_bioTRUE")
-  
-    diff_hl(c2, c1, pm)
-  }) %>%
-  t() %>%
-  as.data.frame()
 
-bind_cols(hl_design, hl_effects) %>%
-  mutate(lower=V1, estimate=V2, upper=V3) %>%
-  dplyr::select(-V1, -V2, -V3)
+found <- to_find %>%
+  apply(1, function(row) {
+    pm <- row[1]; sensor <- row[2]; condition <- row[3]
+
+    # Gather coefficients for chamber identity
+    cs <- "elapsed"
+    if (sensor %in% c("B", "C")) {
+      cs <- paste0("elapsed:sensor", sensor) %>%
+        prepend(cs)
+    }
+
+    # Gather coefficients for condition
+    if (condition %in% c("deadplant", "liveplant")) {
+      cs <- c(cs, "elapsed:has_areaTRUE")
+    }
+    if (condition == "liveplant") {
+      cs <- c(cs, "elapsed:has_bioTRUE")
+    }
+
+    # Obtain coeff values in terms of estimate + confint
+    vals <- summarised %>%
+      filter(pm == .env$pm & term %in% cs) %>%
+      select(`0.5 %`, `2.5 %`, estimate, `97.5 %`, `99.5 %`) %>%
+      as.matrix()
+
+    # Sum across vals for 0.5%, 2.5%, then estimate...
+    log(2) / -apply(vals, 2, sum)
+  })
+
+half_lives <- bind_cols(
+  to_find, t(found) %>% as.data.frame()
+)
+
+options(pillar.sigfig=3)
+half_lives
 ```
 
 # Visualisation
@@ -338,7 +320,7 @@ data$pm10 %>%
   facet_grid(~sensor)
 ```
 
-## Final graph
+## Decay graph
 
 ```{r}
 data %>%
@@ -362,13 +344,14 @@ data %>%
         ifelse(type == "pm2.5", "PM[2.5]", "PM[10]"),
         levels=c("PM[2.5]", "PM[10]"))),
     aes(x=elapsed, y=sc_value),
-    size=.2, alpha=.05
+    size=.2, colour="gray69"
   ) +
   geom_point(aes(fill=condition, colour=condition), size=.2, shape=21) +
   facet_grid(type ~ condition, labeller=label_parsed) +
-  theme(legend.position = "none") +
   ylab(expression("PM Concentration ("*mu*"g m"^-3*")")) +
-  xlab(expression("Time (mins)"))
+  xlab(expression("Time (mins)")) +
+  theme_bw() +
+  theme(legend.position = "none")
 
 ggsave("concentration-time.eps", device=cairo_ps, width=9, height=6, units="in")
 ```
